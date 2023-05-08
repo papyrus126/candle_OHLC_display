@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu May 26 17:29:24 2022
+
+@author: Chia-Liang
+"""
+#本程式的目的在以mpf套件之candlestick來製作某一股票之前三個月的漲跌 OHLC K棒線圖與成交量圖表
+import sys  #sys是一個 可以處理很多有關 檔案系統指令的函數
+import pandas as pd  #匯入pandas,命名為pd 
+from pylab import mpl #從pylab 匯入mpl
+import mplfinance as mpf #匯入mplfiance,命之為mpf
+#在window系統下使用上述中文環境設定, "run config" 設定特定parameters 
+#mpl.rcParams['font.sans-serif'] = ['Microsoft YaHei'] 
+#在APPLE mac的中文顯示之設定 以mpl裡的rcParams來指定預設字型:解決plot不能顯示中文問題 
+mpl.rcParams['font.sans-serif'] = ['Arial Unicode MS']   
+mpl.rcParams['axes.unicode_minus'] = False 
+# 以mpl裡的rcParams,來解決儲存影象是負號'-',卻顯示為方塊的問題
+#使用mplfinance來繪製年度K線圖, 其資料格式是Dataframe 
+#但日前中文顯示會有問題,  因為原來產生中文的mpl的設定, 被後來mpf設定所取代
+#所以在顯示mpf時還要加以宣告
+
+#################以下定義一個自用函數, 用來轉換民國日期為西元日期
+def convertDate(date):  #定義一個函數converDate:轉換民國日期為西元:110/01/02->20210102
+    str1 = str(date)    #輸入的date 轉成字串str(string)
+    yearstr = str1[:3]  #取出民國年: 取出字串 str1的前三字存為yearstr,編號(0:2)
+    realyear = str(int(yearstr) + 1911)  
+    #把yearstr裡三字轉成整數integer(int),再加上1911,成為西元年,再轉成字串
+    realdate = realyear + str1[4:6] + str1[7:9]  
+    #date字串裡4:6即第5-6字,7:9即第8-9字,組合日期成為：yyyymmdd, 置於realdate
+    return realdate  #傳回 realdate.
+ def lookupcode(code):
+#證交所上市股票代碼網頁https://isin.twse.com.tw/isin/class_main.jsp?owncode=&stockname=&isincode=&market=1&issuetype=1&industry_code=&Page=1&chklike=Y
+#證交所上樻股票代碼網頁https://isin.twse.com.tw/isin/class_main.jsp?owncode=&stockname=&isincode=&market=2&issuetype=4&industry_code=&Page=1&chklike=Y
+#查詢傳來的股票代碼,傳回中文名稱  /Users/Chia-Liang/Downloads/Power BI
+   dictfile='/Users/88693/Desktop/財經大數據 APP/TW_stockcode.csv'
+   TWcode = pd.read_csv(dictfile)  #以pandas(pd)套件來讀取檔案,此檔有代碼與名稱之對照表
+   TWcode=TWcode.set_index('有價證券代號').T.to_dict('list')
+   #此段程式以"有價證券代碼"當作索引key,並轉成資料字典,其它證券名稱/類別/...為查詢字典內容
+   #轉換的字典是一列一列的list格式,每一個list以代碼為首,後接其它公司內容
+   if TWcode.get(code)==None: #查字典.get(code)若找不到(code的值)則回應'None'
+      print('Not Found! Please try again')
+      input("Press Enter to continue...")
+      sys.exit() #系統即停止執行, 跳出來
+   else:
+      corp_name=pd.DataFrame(TWcode[code])# 讀出TWcode裡找到代碼的那一串資料轉成dataframe
+      corp_name=corp_name.iat[0,0] #取出corp_name的第一列第一欄（0,0）, 亦即公司名稱    
+   return corp_name  #回傳 公司名稱
+
+files='/Users/88693/Desktop/財經大數據 APP/STOCK_DAY_2022_1101-1125_2330.xlsx' #指明欲讀取的檔案路徑與名稱, 暫存於files
+# 有關於pandas套件讀取xlsx, csv的語法, 請酌參https://pandas.pydata.org/docs/reference/api/pandas.read_excel.html
+corp_code=files[len(files)-9:len(files)-5]#從檔名之最後, 取出股票代碼
+#從檔案截取列印的股價走勢之公司代碼,以便找出中文名稱
+listed_name=lookupcode(int(corp_code))#呼叫函數找出公司名稱
+pdstock = pd.read_excel(files)  #以pandas(pd)套件來讀取檔案
+date_interval=round(len(pdstock)/10) #計算x軸座標上的刻度距離
+
+#依序把讀進來的每欄中文名稱改成英文欄位名稱
+pdstock.columns=['Date','Shares','Volume', 'Open', 'High', 'Low', 
+                 'Close','Range','Transaction']
+
+############以下逐筆轉換月股票檔裡的第一個欄位：日期
+#先取出這股票交易檔pdstock有多少筆,檢查'日期'欄即知天數,
+#然後在這數字範圍裡進行迴圈更換成西元日期, 因為台灣證交所的日期是民國, 不是西元
+#但python裡函數是操作西元日期
+
+for i in range(len(pdstock)):  
+    pdstock['Date'][i] = convertDate(pdstock['Date'][i])
+# i表示第i筆交易日,逐一輸入該筆日期欄字串(民國日期), 呼叫converDate()來更換日期,
+# 並把傳回來的realdate,再存回去原來第i筆之日期欄(此時已是西元日期)
+
+#########以下利用mpf(matplotlib python finance)的OHLC繪製candle K線圖
+length=len(pdstock) #計算檔名的長度,以便截取日期與代碼
+start_end=str(pdstock['Date'][0])+'~'+str(pdstock['Date'][length-1])
+#從檔案名稱裡找出欲列印的起始日期
+
+#利用pandas裡的日期轉換轉功能成日期格式,yyyy-mm-dd hh:mm:ss
+pdstock['Date']=pd.to_datetime(pdstock['Date'])
+pdstock.set_index('Date', inplace=True)#設定Date欄位為索引欄index,以便繪圖時選取對應資料,
+#設定index時,直接使用Date欄位inplace,不必copy再新增一欄 
+#以下確保OHLC欄位是數字
+pdstock['Open']=pd.to_numeric(pdstock['Open']) #若讀入的資料是文字字串,確保皆轉成數字
+pdstock['Close']=pd.to_numeric(pdstock['Close']) #若open close, high low 為貨幣字串格式,
+pdstock['High']=pd.to_numeric(pdstock['High'])  #則要先除去',' ,'$', 再轉換成數字
+pdstock['Low']=pd.to_numeric(pdstock['Low'])
+#設定未來的圖表標題內容
+title='台灣證券交易所: '+start_end+'\n '+listed_name+' (Stock Code: '+corp_code+')'
+
+#設定上K線圖,下成交量圖的相關符號顏色marker color (mc)
+mc = mpf.make_marketcolors(up='red', down='green', #指明上漲up是紅色, 下跌down是綠色
+                           edge='', wick='inherit',#無邊線edge, 高低長鬚wick顏色承襲漲跌inherit
+                           volume='inherit')    #成交量volume顏色inherit 承襲漲跌顏色
+#圖表的style設為s, 各國或各經濟機構的習慣圖表設計並不相同, 此以Yahoo finance上的樣式
+# 顏色則以上述 mc所設定的, 為了示中文,加上rcParams (rc)宣告同mpl所設定
+s = mpf.make_mpf_style(base_mpf_style='yahoo', marketcolors=mc, 
+                       rc={'font.family':'Arial Unicode MS'})
+# 若是 Windows system, 則 rc={'font.family':'Microsoft YaHei'} 
+# 以下以 mpf來繪出 K棒與成交量, 還有 均線圖
+mpf.plot(pdstock, type='candle', style=s, volume=False, # volume=False表示不加上成交量
+         mav=(5,10,15), #順便繪製三條移動平均線moving average(mav)： 5日 10,15日
+         title=title) #圖表標題 就以 title所設定的, ylabel自動設定Price
+mpf.plot(pdstock, type='candle', style=s, volume=True, # volume=True表示加上成交量
+         mav=(5,10,15), #順便繪製三條移動平均線： 5日,10, 15日
+         title= title, ylabel_lower='Amount traded') 
+#因繪製成交量volume所以Y軸下方的標籤ylabel_lower設為 Amount traded
